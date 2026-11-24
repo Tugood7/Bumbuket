@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build & Cache
+.turbo/
+dist/
+build/
+.next/
+out/
+.expo/
+web-build/
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# OS & Editors
+.DS_Store
+Thumbs.db
+*.log
+*.tsbuildinfo
+

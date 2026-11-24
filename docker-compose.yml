@@ -1,0 +1,39 @@
+# ==============================================================================
+# Docker Compose Production — Bumbuket.pku di tubagus-server
+# Menjalankan aplikasi di port 3010 (agar tidak bentrok dengan port 3000)
+# ==============================================================================
+services:
+  web:
+    container_name: bumbuket-web
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_MIDTRANS_CLIENT_KEY: ${NEXT_PUBLIC_MIDTRANS_CLIENT_KEY:-}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://bumbuket.tugoodly.my.id}
+        MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
+    restart: unless-stopped
+    ports:
+      - "3010:3000"
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: "0.0.0.0"
+
+  # Opsional: Cloudflare Tunnel (aktifkan dengan: docker compose --profile tunnel up -d)
+  cloudflared:
+    container_name: bumbuket-cloudflared
+    image: cloudflare/cloudflared:latest
+    profiles:
+      - tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - web
+

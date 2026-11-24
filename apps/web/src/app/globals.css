@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 340 100% 99%; /* #FFF9FB Warm Off-White */
+    --foreground: 334 38% 15%;  /* Deep plum-charcoal readable text */
+    --card: 0 0% 100%;          /* #FFFFFF */
+    --card-foreground: 334 38% 15%;
+    --primary: 336 74% 35%;     /* #9D174D Deep Rose CTA */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 326 78% 95%;   /* #FCE7F3 Blush Pink */
+    --secondary-foreground: 336 74% 35%;
+    --muted: 330 40% 96%;
+    --muted-foreground: 334 15% 44%;
+    --accent: 330 86% 70%;      /* #F472B6 Soft Pink */
+    --accent-foreground: 0 0% 100%;
+    --border: 330 42% 90%;
+    --input: 330 35% 88%;
+    --ring: 336 74% 35%;
+    --radius: 0.875rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-brand-cream text-foreground font-sans antialiased selection:bg-brand-blush selection:text-brand-rose;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-serif tracking-tight;
+  }
+}
+
