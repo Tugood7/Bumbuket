@@ -53,11 +53,11 @@ export default function AdminLoginPage() {
         <div className="text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-blush font-serif text-2xl font-bold text-brand-rose">
             <Image
-              src="/logo.png"
+              src="/logo.jpg"
               alt="Logo Bumbuket.pku"
-              width={40}
-              height={40}
-              className="h-10 w-10 rounded-full object-cover"
+              width={48}
+              height={48}
+              className="h-12 w-12 rounded-full object-cover"
             />
           </div>
           <h1 className="mt-4 font-serif text-2xl font-bold text-foreground">
