@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -51,7 +52,13 @@ export default function AdminLoginPage() {
       <div className="w-full max-w-md rounded-3xl border border-pink-100 bg-white p-8 shadow-soft">
         <div className="text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-blush font-serif text-2xl font-bold text-brand-rose">
-            B
+            <Image
+              src="/logo.png"
+              alt="Logo Bumbuket.pku"
+              width={40}
+              height={40}
+              className="h-10 w-10 rounded-full object-cover"
+            />
           </div>
           <h1 className="mt-4 font-serif text-2xl font-bold text-foreground">
             Admin {STORE_INFO.name}

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -53,7 +54,13 @@ export function AdminSidebar({ adminName, adminEmail }: AdminSidebarProps) {
       <div className="flex items-center justify-between border-b border-pink-100 px-5 py-4">
         <Link href="/admin" className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-blush font-serif text-lg font-bold text-brand-rose">
-            B
+            <Image
+              src="/logo.jpg"
+              alt="Logo Bumbuket.pku"
+              width={40}
+              height={40}
+              className="h-10 w-10 rounded-full object-cover"
+            />
           </span>
           <div className="leading-tight">
             <span className="block font-serif text-base font-bold text-brand-rose">

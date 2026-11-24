@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Clock, Instagram, MapPin, MessageCircle } from "lucide-react";
 import {
@@ -17,7 +18,13 @@ export function Footer() {
         <div>
           <div className="flex items-center gap-2.5">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-blush font-serif text-xl font-bold text-brand-rose">
-              B
+              <Image
+                src="/logo.jpg"
+                alt="Logo Bumbuket.pku"
+                width={40}
+                height={40}
+                className="h-10 w-10 rounded-full object-cover"
+              />
             </span>
             <div>
               <p className="font-serif text-lg font-bold text-brand-rose">
