@@ -41,7 +41,9 @@ export async function POST(request: Request) {
 
     const { data: existingOrder, error: fetchError } = await supabaseAdmin
       .from("orders")
-      .select("id, payment_status, order_status, items:order_items(product_id, quantity)")
+      .select(
+        "id, payment_plan, payment_status, order_status, items:order_items(product_id, quantity)"
+      )
       .eq("order_number", body.order_id)
       .single();
 
@@ -57,16 +59,27 @@ export async function POST(request: Request) {
       body.fraud_status
     );
 
-    const wasAlreadyPaid = existingOrder.payment_status === "paid";
+    const wasAlreadySettledOrDp =
+      existingOrder.payment_status === "paid" ||
+      existingOrder.payment_status === "dp_paid";
+
+    const nextPaymentStatus =
+      mapped.isPaidNow && existingOrder.payment_plan === "dp"
+        ? "dp_paid"
+        : mapped.paymentStatus;
 
     const updatePayload: Record<string, unknown> = {
-      payment_status: mapped.paymentStatus,
+      payment_status: nextPaymentStatus,
       payment_method: body.payment_type ?? null,
       midtrans_transaction_id: body.transaction_id ?? null,
     };
 
-    if (mapped.isPaidNow && !wasAlreadyPaid) {
+    if (mapped.isPaidNow && !wasAlreadySettledOrDp) {
       updatePayload.paid_at = new Date().toISOString();
+    }
+
+    if (nextPaymentStatus === "paid") {
+      updatePayload.remaining_amount = 0;
     }
 
     if (mapped.orderStatus) {
@@ -89,8 +102,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Kurangi stok produk ready_stock secara idempoten saat pertama kali berstatus paid
-    if (mapped.isPaidNow && !wasAlreadyPaid && Array.isArray(existingOrder.items)) {
+    // Kurangi stok produk ready_stock secara idempoten saat pertama kali berstatus paid / dp_paid
+    if (mapped.isPaidNow && !wasAlreadySettledOrDp && Array.isArray(existingOrder.items)) {
       for (const item of existingOrder.items as Array<{
         product_id: string | null;
         quantity: number;

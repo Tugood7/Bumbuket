@@ -1,6 +1,8 @@
 import { getOrderByNumber } from "@/lib/data/orders";
 import { OrderTracker } from "@/components/storefront/order-tracker";
 
+export const dynamic = "force-dynamic";
+
 interface OrderTrackingPageProps {
   params: Promise<{ orderNumber: string }>;
 }

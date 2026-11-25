@@ -124,13 +124,26 @@ export default async function AdminOrdersPage({
                         ? "TF BRI"
                         : order.checkout_channel}
                     </td>
-                    <td className="px-4 py-3.5 font-bold text-brand-rose">
-                      {formatRupiah(order.total_amount)}
+                    <td className="px-4 py-3.5">
+                      <p className="font-bold text-brand-rose">
+                        {formatRupiah(order.total_amount)}
+                      </p>
+                      {order.payment_plan === "dp" && (
+                        <p className="text-[11px] font-medium text-sky-800">
+                          DP {formatRupiah(order.dp_amount ?? 0)}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex flex-col items-start gap-1">
                         <OrderStatusPill status={order.order_status} />
                         <PaymentStatusPill status={order.payment_status} />
+                        {order.payment_proof_url &&
+                          order.payment_status !== "paid" && (
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200">
+                              Ada Bukti TF
+                            </span>
+                          )}
                       </div>
                     </td>
                     <td className="px-4 py-3.5 text-right">

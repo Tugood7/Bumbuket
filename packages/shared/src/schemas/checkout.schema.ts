@@ -52,6 +52,8 @@ export const checkoutSchema = z
     checkoutChannel: z
       .enum(["midtrans", "bank_transfer", "whatsapp"])
       .default("midtrans"),
+    paymentPlan: z.enum(["full", "dp"]).default("full"),
+    dpAmount: z.number().int().min(0).nullable().optional(),
     items: z
       .array(checkoutItemSchema)
       .min(1, "Keranjang belanja tidak boleh kosong"),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCustomOrderWaLink,
+  calculateMinDpAmount,
   calculateMoneyBouquetPrice,
   checkoutSchema,
   formatCompactRupiah,
@@ -161,6 +162,12 @@ describe("Currency & WhatsApp Helpers", () => {
     expect(decodeURIComponent(url)).toContain("Blush Pink Lily Premium");
     expect(decodeURIComponent(url)).toContain("Selamat Wisuda!");
     expect(decodeURIComponent(url)).toContain("Grab");
+  });
+
+  it("calculates minimum DP amount (50% or minimum Rp 50.000)", () => {
+    expect(calculateMinDpAmount(185_000)).toBe(92_500);
+    expect(calculateMinDpAmount(80_000)).toBe(50_000);
+    expect(calculateMinDpAmount(45_000)).toBe(45_000);
   });
 });
 

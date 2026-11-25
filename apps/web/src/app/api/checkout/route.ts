@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import {
   buildOrderConfirmWaLink,
+  calculateMinDpAmount,
   calculateMoneyBouquetPrice,
   checkoutSchema,
+  formatRupiah,
   normalizeIndonesianPhone,
   STORE_INFO,
   type MoneyBouquetDetails,
@@ -161,6 +163,62 @@ export async function POST(request: Request) {
     // Ongkir Gojek / Maxim / Grab dibayar terpisah sesuai tarif aplikasi
     const shippingFee = 0;
     const totalAmount = subtotal + shippingFee;
+
+    // Validasi skema pembayaran (Lunas vs DP nominal bebas dengan minimal 50% / Rp 50.000)
+    const paymentPlan = input.paymentPlan ?? "full";
+    let dpAmount = 0;
+    let remainingAmount = 0;
+    let payableNow = totalAmount;
+
+    if (paymentPlan === "dp") {
+      const minDp = calculateMinDpAmount(totalAmount);
+      if (totalAmount <= STORE_INFO.minDpAmount) {
+        return NextResponse.json(
+          {
+            error: `Pembayaran DP hanya tersedia untuk pesanan di atas ${formatRupiah(STORE_INFO.minDpAmount)}.`,
+            fieldErrors: {
+              dpAmount: [
+                `Pesanan dengan total ${formatRupiah(totalAmount)} harus dibayar Lunas.`,
+              ],
+            },
+          },
+          { status: 400 }
+        );
+      }
+
+      const requestedDp = input.dpAmount ?? 0;
+      if (!Number.isInteger(requestedDp) || requestedDp < minDp) {
+        return NextResponse.json(
+          {
+            error: `Nominal DP minimal ${formatRupiah(minDp)} (50% dari total pesanan / minimal ${formatRupiah(STORE_INFO.minDpAmount)}).`,
+            fieldErrors: {
+              dpAmount: [`Minimal DP adalah ${formatRupiah(minDp)}.`],
+            },
+          },
+          { status: 400 }
+        );
+      }
+
+      if (requestedDp >= totalAmount) {
+        return NextResponse.json(
+          {
+            error:
+              "Nominal DP harus lebih kecil dari total pesanan. Pilih Lunas bila ingin membayar penuh.",
+            fieldErrors: {
+              dpAmount: [
+                `Nominal DP harus kurang dari ${formatRupiah(totalAmount)} (atau pilih Lunas).`,
+              ],
+            },
+          },
+          { status: 400 }
+        );
+      }
+
+      dpAmount = requestedDp;
+      remainingAmount = totalAmount - dpAmount;
+      payableNow = dpAmount;
+    }
+
     const paymentExpiresAt = new Date(
       Date.now() + STORE_INFO.paymentDeadlineMinutes * 60 * 1000
     ).toISOString();
@@ -227,6 +285,9 @@ export async function POST(request: Request) {
           discount_amount: 0,
           total_amount: totalAmount,
           checkout_channel: input.checkoutChannel,
+          payment_plan: paymentPlan,
+          dp_amount: dpAmount,
+          remaining_amount: remainingAmount,
           payment_status: "pending",
           payment_method:
             input.checkoutChannel === "bank_transfer"
@@ -281,20 +342,32 @@ export async function POST(request: Request) {
     // 4. Generate Midtrans Snap Token jika metode = midtrans & kunci terkonfigurasi
     if (input.checkoutChannel === "midtrans" && isMidtransConfigured()) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+      const midtransItems =
+        paymentPlan === "dp"
+          ? [
+              {
+                id: `dp-${orderNumber}`,
+                name: `DP Pesanan ${orderNumber} (Sisa ${formatRupiah(remainingAmount)})`,
+                price: payableNow,
+                quantity: 1,
+              },
+            ]
+          : resolvedItems.map((item, idx) => ({
+              id: item.productId ?? `item-${idx + 1}`,
+              name: item.variantName
+                ? `${item.productName} - ${item.variantName}`
+                : item.productName,
+              price: item.unitPrice,
+              quantity: item.quantity,
+            }));
+
       const snap = await createMidtransSnapTransaction({
         orderNumber,
-        grossAmount: totalAmount,
+        grossAmount: payableNow,
         customerName: input.customerName,
         customerPhone: normalizedCustomerPhone,
         customerEmail: input.customerEmail || null,
-        items: resolvedItems.map((item, idx) => ({
-          id: item.productId ?? `item-${idx + 1}`,
-          name: item.variantName
-            ? `${item.productName} - ${item.variantName}`
-            : item.productName,
-          price: item.unitPrice,
-          quantity: item.quantity,
-        })),
+        items: midtransItems,
         finishRedirectUrl: `${appUrl}/orders/${orderNumber}`,
       });
 
@@ -326,6 +399,9 @@ export async function POST(request: Request) {
       deliveryAddress: input.deliveryAddress ?? null,
       deliveryDistrict: input.deliveryDistrict ?? null,
       paymentMethodLabel,
+      paymentPlan,
+      dpAmount,
+      remainingAmount,
       hasSeparateMoneyBouquetCash,
       itemsSummary: resolvedItems.map((item) => ({
         productName: item.productName,
@@ -340,6 +416,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       orderNumber,
       checkoutChannel: input.checkoutChannel,
+      paymentPlan,
+      dpAmount,
+      remainingAmount,
+      payableNow,
       totalAmount,
       paymentExpiresAt,
       snapToken,
@@ -368,6 +448,9 @@ export async function POST(request: Request) {
         discount_amount: 0,
         total_amount: totalAmount,
         checkout_channel: input.checkoutChannel,
+        payment_plan: paymentPlan,
+        dp_amount: dpAmount,
+        remaining_amount: remainingAmount,
         payment_status: "pending",
         payment_method: paymentMethodLabel,
         payment_expires_at: paymentExpiresAt,

@@ -8,9 +8,12 @@ export type CourierProvider = "gojek" | "maxim" | "grab";
 
 export type CheckoutChannel = "midtrans" | "bank_transfer" | "whatsapp";
 
+export type PaymentPlan = "full" | "dp";
+
 export type PaymentStatus =
   | "unpaid"
   | "pending"
+  | "dp_paid"
   | "paid"
   | "failed"
   | "expired"
@@ -126,9 +129,14 @@ export interface Order {
   discount_amount: number;
   total_amount: number;
   checkout_channel: CheckoutChannel;
+  payment_plan?: PaymentPlan;
+  dp_amount?: number;
+  remaining_amount?: number;
   payment_status: PaymentStatus;
   payment_method: string | null;
   payment_expires_at: string | null;
+  payment_proof_url?: string | null;
+  payment_proof_uploaded_at?: string | null;
   midtrans_order_id: string | null;
   midtrans_snap_token: string | null;
   midtrans_transaction_id: string | null;

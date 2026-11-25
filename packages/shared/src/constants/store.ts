@@ -17,6 +17,8 @@ export const STORE_INFO = {
   timezone: "Asia/Jakarta",
   timezoneLabel: "WIB",
   paymentDeadlineMinutes: 10,
+  minDpPercent: 50,
+  minDpAmount: 50_000,
   bankAccount: {
     bankName: "BRI",
     accountNumber: "540701018229534",
@@ -32,3 +34,17 @@ export const STORE_BRAND_COLORS = {
   backgroundWhite: "#FFFFFF",
   warmOffWhite: "#FFF9FB",
 } as const;
+
+/**
+ * Hitung minimal DP untuk sebuah total pesanan:
+ * minimal 50% dari total pesanan atau Rp 50.000 (mana yang lebih besar).
+ */
+export function calculateMinDpAmount(totalAmount: number): number {
+  if (totalAmount <= STORE_INFO.minDpAmount) {
+    return totalAmount;
+  }
+  return Math.min(
+    totalAmount,
+    Math.max(STORE_INFO.minDpAmount, Math.ceil(totalAmount * (STORE_INFO.minDpPercent / 100)))
+  );
+}

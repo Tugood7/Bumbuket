@@ -370,9 +370,11 @@ export async function getAdminDashboardSummary() {
     (o) => o.order_status === "processing" || o.order_status === "arranging"
   );
 
-  const paidRevenue = orders
-    .filter((o) => o.payment_status === "paid")
-    .reduce((sum, o) => sum + o.total_amount, 0);
+  const paidRevenue = orders.reduce((sum, o) => {
+    if (o.payment_status === "paid") return sum + o.total_amount;
+    if (o.payment_status === "dp_paid") return sum + (o.dp_amount ?? 0);
+    return sum;
+  }, 0);
 
   const lowStockReadyProducts = products.filter(
     (p) =>

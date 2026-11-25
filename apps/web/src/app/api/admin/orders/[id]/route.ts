@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAdminAuth } from "@/lib/auth/admin";
@@ -15,7 +16,15 @@ const adminOrderPatchSchema = z.object({
     ])
     .optional(),
   paymentStatus: z
-    .enum(["unpaid", "pending", "paid", "failed", "expired", "refunded"])
+    .enum([
+      "unpaid",
+      "pending",
+      "dp_paid",
+      "paid",
+      "failed",
+      "expired",
+      "refunded",
+    ])
     .optional(),
   adminNotes: z.string().trim().max(500).nullable().optional(),
 });
@@ -51,7 +60,7 @@ export async function PATCH(
   const { data: existing, error: findErr } = await supabaseAdmin
     .from("orders")
     .select(
-      "id, payment_status, order_status, items:order_items(product_id, quantity)"
+      "id, order_number, payment_status, order_status, items:order_items(product_id, quantity)"
     )
     .eq("id", id)
     .single();
@@ -63,16 +72,22 @@ export async function PATCH(
     );
   }
 
+  const wasAlreadyConfirmed =
+    existing.payment_status === "paid" || existing.payment_status === "dp_paid";
+  const isNowConfirmingPayment =
+    parsed.data.paymentStatus === "paid" ||
+    parsed.data.paymentStatus === "dp_paid";
+
   const updates: Record<string, unknown> = {};
   if (parsed.data.orderStatus !== undefined) {
     updates.order_status = parsed.data.orderStatus;
   }
   if (parsed.data.paymentStatus !== undefined) {
     updates.payment_status = parsed.data.paymentStatus;
-    if (
-      parsed.data.paymentStatus === "paid" &&
-      existing.payment_status !== "paid"
-    ) {
+    if (parsed.data.paymentStatus === "paid") {
+      updates.remaining_amount = 0;
+    }
+    if (isNowConfirmingPayment && !wasAlreadyConfirmed) {
       updates.paid_at = new Date().toISOString();
       if (
         !parsed.data.orderStatus &&
@@ -100,10 +115,10 @@ export async function PATCH(
     );
   }
 
-  // Kurangi stok ready_stock jika admin baru saja mengonfirmasi pembayaran BRI manual -> paid
+  // Kurangi stok ready_stock sekali saja saat admin pertama kali konfirmasi DP Diterima / Lunas
   if (
-    parsed.data.paymentStatus === "paid" &&
-    existing.payment_status !== "paid" &&
+    isNowConfirmingPayment &&
+    !wasAlreadyConfirmed &&
     Array.isArray(existing.items)
   ) {
     for (const item of existing.items as Array<{
@@ -124,6 +139,14 @@ export async function PATCH(
           .eq("id", prod.id);
       }
     }
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${id}`);
+  revalidatePath("/admin/schedule");
+  if (existing.order_number) {
+    revalidatePath(`/orders/${existing.order_number}`);
   }
 
   return NextResponse.json({ order: updated });

@@ -5,19 +5,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
+  ArrowRight,
   Building2,
   Calendar,
   Check,
+  CheckCircle2,
   Clock,
   Copy,
   CreditCard,
   ExternalLink,
+  ImagePlus,
   Loader2,
   MapPin,
   MessageCircle,
   Truck,
+  X,
 } from "lucide-react";
 import {
+  calculateMinDpAmount,
   COURIER_PROVIDER_OPTIONS,
   formatIndonesianDate,
   formatRupiah,
@@ -30,6 +35,7 @@ import {
   type CheckoutChannel,
   type CourierProvider,
   type FulfillmentMethod,
+  type PaymentPlan,
 } from "@bumbuket/shared";
 import { useCartStore } from "@/store/cart.store";
 import { Button } from "@/components/ui/button";
@@ -92,16 +98,74 @@ export function CheckoutForm() {
 
   const [checkoutChannel, setCheckoutChannel] =
     useState<CheckoutChannel>("midtrans");
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlan>("full");
+  const [customDpAmount, setCustomDpAmount] = useState<string>("");
 
   const [copiedBri, setCopiedBri] = useState(false);
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+  const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(
+    null
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const [briSuccessOrder, setBriSuccessOrder] = useState<{
+    orderNumber: string;
+    totalAmount: number;
+    paymentPlan: PaymentPlan;
+    dpAmount: number;
+    remainingAmount: number;
+    hasUploadedProof: boolean;
+  } | null>(null);
+
+  const handleSelectProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setErrorMessage("Format screenshot bukti transfer harus JPG, PNG, atau WebP.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMessage("Ukuran screenshot bukti transfer maksimal 5 MB.");
+      return;
+    }
+    setErrorMessage(null);
+    setPaymentProofFile(file);
+    setPaymentProofPreview(URL.createObjectURL(file));
+    e.target.value = "";
+  };
+
+  const clearProofFile = () => {
+    if (paymentProofPreview) {
+      URL.revokeObjectURL(paymentProofPreview);
+    }
+    setPaymentProofFile(null);
+    setPaymentProofPreview(null);
+  };
 
   const subtotal = items.reduce(
     (sum, item) => sum + item.unitPrice * item.quantity,
     0
   );
+
+  const canUseDp = subtotal > STORE_INFO.minDpAmount;
+  const minDpAmount = calculateMinDpAmount(subtotal);
+  const parsedCustomDp = Number(customDpAmount);
+  const effectiveDpAmount =
+    customDpAmount.trim() === ""
+      ? minDpAmount
+      : Number.isFinite(parsedCustomDp)
+        ? Math.floor(parsedCustomDp)
+        : 0;
+  const isDpValid =
+    paymentPlan === "full" ||
+    (canUseDp && effectiveDpAmount >= minDpAmount && effectiveDpAmount < subtotal);
+  const payableNow =
+    paymentPlan === "dp" && canUseDp ? effectiveDpAmount : subtotal;
+  const remainingAmount =
+    paymentPlan === "dp" && canUseDp
+      ? Math.max(0, subtotal - effectiveDpAmount)
+      : 0;
 
   const hasSeparateMoneyBouquetCash = items.some(
     (item) =>
@@ -145,6 +209,27 @@ export function CheckoutForm() {
       return;
     }
 
+    if (paymentPlan === "dp") {
+      if (!canUseDp) {
+        setErrorMessage(
+          `Pembayaran DP hanya tersedia untuk pesanan di atas ${formatRupiah(STORE_INFO.minDpAmount)}.`
+        );
+        return;
+      }
+      if (effectiveDpAmount < minDpAmount) {
+        setErrorMessage(
+          `Nominal DP minimal ${formatRupiah(minDpAmount)} (50% dari total pesanan / minimal ${formatRupiah(STORE_INFO.minDpAmount)}).`
+        );
+        return;
+      }
+      if (effectiveDpAmount >= subtotal) {
+        setErrorMessage(
+          "Nominal DP harus lebih kecil dari total pesanan. Pilih Lunas jika ingin membayar penuh."
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -170,6 +255,9 @@ export function CheckoutForm() {
             fulfillmentMethod === "instant_courier" ? deliveryAddress : null,
           deliveryNotes: deliveryNotes || null,
           checkoutChannel,
+          paymentPlan: canUseDp ? paymentPlan : "full",
+          dpAmount:
+            paymentPlan === "dp" && canUseDp ? effectiveDpAmount : null,
           items: items.map((item) => ({
             productId: item.productId,
             variantId: item.variantId,
@@ -195,12 +283,36 @@ export function CheckoutForm() {
         return;
       }
 
+      let uploadedProofUrl: string | null = null;
+      let uploadedProofAt: string | null = null;
+
+      // Jika customer sudah melampirkan screenshot bukti transfer BRI saat checkout, langsung unggah
+      if (checkoutChannel === "bank_transfer" && paymentProofFile && data.orderNumber) {
+        try {
+          const fd = new FormData();
+          fd.append("file", paymentProofFile);
+          const uploadRes = await fetch(
+            `/api/orders/${encodeURIComponent(data.orderNumber)}/payment-proof`,
+            { method: "POST", body: fd }
+          );
+          if (uploadRes.ok) {
+            const uploadJson = await uploadRes.json();
+            uploadedProofUrl = uploadJson.url ?? null;
+            uploadedProofAt = uploadJson.uploadedAt ?? null;
+          }
+        } catch {
+          // Pelanggan tetap dapat mengunggah ulang di halaman detail pesanan
+        }
+      }
+
       // Simpan snapshot lokal agar halaman tracking tetap tampil mulus bahkan di mode preview
       if (typeof window !== "undefined" && data.orderSnapshot) {
         window.sessionStorage.setItem(
           `bumbuket-order-${data.orderNumber}`,
           JSON.stringify({
             ...data.orderSnapshot,
+            payment_proof_url: uploadedProofUrl,
+            payment_proof_uploaded_at: uploadedProofAt,
             whatsappUrl: data.whatsappUrl,
             snapRedirectUrl: data.snapRedirectUrl,
             demoMode: data.demoMode,
@@ -239,7 +351,24 @@ export function CheckoutForm() {
         return;
       }
 
-      // 4. Transfer Bank BRI atau fallback langsung ke halaman tracking pesanan
+      // 4. Transfer Bank BRI: tampilkan popup selamat & tombol Cek Proses Pesanan
+      if (checkoutChannel === "bank_transfer") {
+        clearProofFile();
+        setIsSubmitting(false);
+        setBriSuccessOrder({
+          orderNumber: data.orderNumber,
+          totalAmount: data.totalAmount ?? subtotal,
+          paymentPlan: data.paymentPlan ?? paymentPlan,
+          dpAmount: data.dpAmount ?? (paymentPlan === "dp" ? effectiveDpAmount : 0),
+          remainingAmount:
+            data.remainingAmount ??
+            (paymentPlan === "dp" ? remainingAmount : 0),
+          hasUploadedProof: Boolean(uploadedProofUrl),
+        });
+        return;
+      }
+
+      // 5. Fallback langsung ke halaman tracking pesanan
       router.push(`/orders/${data.orderNumber}`);
     } catch {
       setErrorMessage(
@@ -248,6 +377,88 @@ export function CheckoutForm() {
       setIsSubmitting(false);
     }
   };
+
+  if (briSuccessOrder) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-rose/25 p-4 backdrop-blur-xs">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bri-order-success-title"
+          className="w-full max-w-md rounded-3xl border border-pink-100 bg-white p-7 text-center shadow-2xl"
+        >
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-4 ring-emerald-100/80">
+            <CheckCircle2 className="h-9 w-9" />
+          </div>
+
+          <h2
+            id="bri-order-success-title"
+            className="mt-4 font-serif text-2xl font-bold text-foreground"
+          >
+            Selamat! Orderan Anda Berhasil
+          </h2>
+
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {briSuccessOrder.hasUploadedProof
+              ? "Orderan Anda telah berhasil dibuat dan bukti transfer BRI sudah diterima untuk segera diproses oleh admin kami. Anda dapat memantau proses pesanan Anda di sini."
+              : "Orderan Anda telah berhasil dibuat dan siap diproses. Pantau orderan Anda serta lengkapi bukti transfer BRI di halaman status pesanan."}
+          </p>
+
+          <div className="mt-5 rounded-2xl border border-pink-100 bg-brand-cream/80 p-4 text-xs">
+            <p className="text-muted-foreground">Nomor Pesanan</p>
+            <p className="mt-0.5 font-mono text-base font-bold text-brand-rose">
+              {briSuccessOrder.orderNumber}
+            </p>
+            {briSuccessOrder.paymentPlan === "dp" ? (
+              <div className="mt-2.5 space-y-1 border-t border-pink-100 pt-2">
+                <p className="text-muted-foreground">
+                  Nominal DP Sekarang:{" "}
+                  <strong className="text-brand-rose">
+                    {formatRupiah(briSuccessOrder.dpAmount)}
+                  </strong>
+                </p>
+                <p className="text-muted-foreground">
+                  Sisa Pelunasan:{" "}
+                  <strong className="text-foreground">
+                    {formatRupiah(briSuccessOrder.remainingAmount)}
+                  </strong>{" "}
+                  (dari total {formatRupiah(briSuccessOrder.totalAmount)})
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-muted-foreground">
+                Total Transfer (Lunas):{" "}
+                <strong className="text-foreground">
+                  {formatRupiah(briSuccessOrder.totalAmount)}
+                </strong>
+              </p>
+            )}
+          </div>
+
+          <div className="mt-6 flex flex-col gap-2.5">
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              onClick={() =>
+                router.push(`/orders/${briSuccessOrder.orderNumber}`)
+              }
+            >
+              Cek Proses Pesanan
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+
+            <Link
+              href="/catalog"
+              className="py-1.5 text-xs font-semibold text-muted-foreground hover:text-brand-rose"
+            >
+              Kembali ke Katalog
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -646,7 +857,144 @@ export function CheckoutForm() {
             </span>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-4">
+            {/* Skema Pembayaran: Lunas vs DP */}
+            <div className="rounded-2xl border border-pink-100 bg-brand-cream/60 p-4">
+              <p className="text-xs font-bold text-foreground">
+                Pilih Skema Pembayaran *
+              </p>
+              <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentPlan("full")}
+                  className={cn(
+                    "rounded-xl border p-3 text-left transition-all",
+                    paymentPlan === "full"
+                      ? "border-brand-rose bg-white ring-1 ring-brand-rose"
+                      : "border-pink-200 bg-white/70 hover:bg-white"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-foreground">
+                      Bayar Lunas (100%)
+                    </span>
+                    {paymentPlan === "full" && (
+                      <Check className="h-4 w-4 text-brand-rose" />
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs font-bold text-brand-rose">
+                    {formatRupiah(subtotal)}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!canUseDp}
+                  onClick={() => {
+                    setPaymentPlan("dp");
+                    if (!customDpAmount) {
+                      setCustomDpAmount(String(minDpAmount));
+                    }
+                  }}
+                  className={cn(
+                    "rounded-xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50",
+                    paymentPlan === "dp"
+                      ? "border-brand-rose bg-white ring-1 ring-brand-rose"
+                      : "border-pink-200 bg-white/70 hover:bg-white"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-foreground">
+                      Bayar DP Dulu
+                    </span>
+                    {paymentPlan === "dp" && (
+                      <Check className="h-4 w-4 text-brand-rose" />
+                    )}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {canUseDp
+                      ? `Min. ${formatRupiah(minDpAmount)} (50% / min. 50rb)`
+                      : `Khusus pesanan di atas ${formatRupiah(STORE_INFO.minDpAmount)}`}
+                  </p>
+                </button>
+              </div>
+
+              {paymentPlan === "dp" && canUseDp && (
+                <div className="mt-3 space-y-2.5 rounded-xl border border-pink-200 bg-white p-3.5 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label
+                      htmlFor="dp-amount-input"
+                      className="font-semibold text-foreground"
+                    >
+                      Nominal DP yang Ingin Dibayar (Rupiah) *
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setCustomDpAmount(String(minDpAmount))}
+                        className="rounded-full bg-brand-blush px-2.5 py-1 text-[11px] font-semibold text-brand-rose hover:bg-pink-200/70"
+                      >
+                        Min. 50% ({formatRupiah(minDpAmount)})
+                      </button>
+                      {Math.ceil(subtotal * 0.75) < subtotal &&
+                        Math.ceil(subtotal * 0.75) > minDpAmount && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCustomDpAmount(String(Math.ceil(subtotal * 0.75)))
+                            }
+                            className="rounded-full border border-pink-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-foreground hover:bg-brand-blush/40"
+                          >
+                            75%
+                          </button>
+                        )}
+                    </div>
+                  </div>
+
+                  <Input
+                    id="dp-amount-input"
+                    type="number"
+                    min={minDpAmount}
+                    max={Math.max(minDpAmount, subtotal - 1000)}
+                    step={1000}
+                    required
+                    value={customDpAmount === "" ? String(minDpAmount) : customDpAmount}
+                    onChange={(e) => setCustomDpAmount(e.target.value)}
+                    placeholder={`Minimal ${minDpAmount}`}
+                  />
+
+                  {!isDpValid ? (
+                    <p className="text-[11px] font-medium text-red-600">
+                      Nominal DP harus antara {formatRupiah(minDpAmount)} dan kurang dari{" "}
+                      {formatRupiah(subtotal)}.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-brand-blush/35 px-3 py-2 text-[11px]">
+                      <span>
+                        Bayar Sekarang (DP):{" "}
+                        <strong className="text-brand-rose">
+                          {formatRupiah(payableNow)}
+                        </strong>
+                      </span>
+                      <span>
+                        Sisa Pelunasan:{" "}
+                        <strong className="text-foreground">
+                          {formatRupiah(remainingAmount)}
+                        </strong>
+                      </span>
+                    </div>
+                  )}
+
+                  {fieldErrors.dpAmount && (
+                    <p className="text-xs text-red-600">
+                      {fieldErrors.dpAmount[0]}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
             {/* Option A: Midtrans */}
             <button
               type="button"
@@ -708,31 +1056,81 @@ export function CheckoutForm() {
               </button>
 
               {checkoutChannel === "bank_transfer" && (
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-pink-200 bg-white px-3.5 py-2.5 text-xs">
-                  <div>
-                    <p className="font-mono text-sm font-bold text-brand-rose">
-                      {STORE_INFO.bankAccount.accountNumber}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {STORE_INFO.bankAccount.bankName} a.n.{" "}
-                      {STORE_INFO.bankAccount.accountHolder}
-                    </p>
+                <div className="mt-3 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-pink-200 bg-white px-3.5 py-2.5 text-xs">
+                    <div>
+                      <p className="font-mono text-sm font-bold text-brand-rose">
+                        {STORE_INFO.bankAccount.accountNumber}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {STORE_INFO.bankAccount.bankName} a.n.{" "}
+                        {STORE_INFO.bankAccount.accountHolder}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={copyBriAccount}
+                      className="inline-flex items-center gap-1 rounded-full bg-brand-blush px-3 py-1.5 font-semibold text-brand-rose hover:bg-pink-200/80"
+                    >
+                      {copiedBri ? (
+                        <>
+                          <Check className="h-3.5 w-3.5" /> Tersalin
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" /> Salin No. Rek
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={copyBriAccount}
-                    className="inline-flex items-center gap-1 rounded-full bg-brand-blush px-3 py-1.5 font-semibold text-brand-rose hover:bg-pink-200/80"
-                  >
-                    {copiedBri ? (
-                      <>
-                        <Check className="h-3.5 w-3.5" /> Tersalin
-                      </>
+
+                  {/* Upload Opsional Bukti Transfer BRI langsung saat Checkout */}
+                  <div className="rounded-xl border border-dashed border-pink-300 bg-white/90 p-3 text-xs">
+                    <p className="font-semibold text-foreground">
+                      Screenshot Bukti Transfer BRI (Opsional)
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Sudah transfer? Langsung unggah screenshot di sini (JPG/PNG/WebP, maks 5 MB), atau bisa juga diunggah setelah pesanan dibuat.
+                    </p>
+
+                    {paymentProofPreview ? (
+                      <div className="mt-2.5 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={paymentProofPreview}
+                          alt="Preview bukti transfer BRI"
+                          className="h-14 w-14 rounded-lg border border-emerald-200 object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold text-emerald-900">
+                            {paymentProofFile?.name}
+                          </p>
+                          <p className="text-[11px] text-emerald-800">
+                            Siap diunggah bersama pesanan
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={clearProofFile}
+                          aria-label="Hapus screenshot"
+                          className="rounded-full p-1.5 text-red-600 hover:bg-red-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
                     ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5" /> Salin No. Rek
-                      </>
+                      <label className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-brand-blush px-3.5 py-1.5 font-semibold text-brand-rose hover:bg-pink-200/70">
+                        <ImagePlus className="h-3.5 w-3.5" />
+                        <span>Pilih Screenshot Bukti Transfer</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={handleSelectProofFile}
+                          className="hidden"
+                        />
+                      </label>
                     )}
-                  </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -763,6 +1161,7 @@ export function CheckoutForm() {
                 lengkap.
               </p>
             </button>
+            </div>
           </div>
         </section>
       </div>
@@ -823,15 +1222,27 @@ export function CheckoutForm() {
             </span>
           </div>
           <div className="flex justify-between border-t border-pink-100 pt-3 text-base font-bold text-brand-rose">
-            <span>Total Bayar</span>
-            <span>{formatRupiah(subtotal)}</span>
+            <span>
+              {paymentPlan === "dp" && canUseDp
+                ? "Bayar Sekarang (DP)"
+                : "Total Bayar (Lunas)"}
+            </span>
+            <span>{formatRupiah(payableNow)}</span>
           </div>
+          {paymentPlan === "dp" && canUseDp && (
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Sisa Pelunasan (saat buket siap/diambil)</span>
+              <span className="font-semibold text-foreground">
+                {formatRupiah(remainingAmount)}
+              </span>
+            </div>
+          )}
         </div>
 
         <Button
           type="submit"
           size="lg"
-          disabled={isSubmitting || isClosedDay}
+          disabled={isSubmitting || isClosedDay || !isDpValid}
           variant={checkoutChannel === "whatsapp" ? "whatsapp" : "default"}
           className="mt-6 w-full"
         >
@@ -841,13 +1252,19 @@ export function CheckoutForm() {
               Memproses Pesanan...
             </>
           ) : checkoutChannel === "midtrans" ? (
-            "Bayar Sekarang via Midtrans"
+            paymentPlan === "dp" && canUseDp
+              ? `Bayar DP (${formatRupiah(payableNow)}) via Midtrans`
+              : "Bayar Lunas via Midtrans"
           ) : checkoutChannel === "bank_transfer" ? (
-            "Buat Pesanan & Bayar via BRI"
+            paymentPlan === "dp" && canUseDp
+              ? `Buat Pesanan & Bayar DP via BRI`
+              : "Buat Pesanan & Bayar via BRI"
           ) : (
             <>
               <MessageCircle className="h-4 w-4" />
-              Buat Pesanan &amp; Kirim ke WhatsApp
+              {paymentPlan === "dp" && canUseDp
+                ? "Buat Pesanan (DP) & Kirim ke WhatsApp"
+                : "Buat Pesanan & Kirim ke WhatsApp"}
             </>
           )}
         </Button>

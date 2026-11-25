@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   Check,
   CheckCircle2,
   Copy,
+  ExternalLink,
+  ImageIcon,
   Loader2,
   MessageCircle,
   Printer,
@@ -14,6 +17,7 @@ import {
 import {
   ADMIN_ORDER_WORKFLOW_STEPS,
   buildWhatsAppUrl,
+  formatRupiah,
   ORDER_STATUS_META,
   type OrderStatus,
   type OrderWithItems,
@@ -57,7 +61,8 @@ export function OrderDetailActions({ order }: OrderDetailActionsProps) {
       if (payload.paymentStatus) {
         setPaymentStatus(payload.paymentStatus as typeof paymentStatus);
         if (
-          payload.paymentStatus === "paid" &&
+          (payload.paymentStatus === "paid" ||
+            payload.paymentStatus === "dp_paid") &&
           currentStatus === "pending_payment"
         ) {
           setCurrentStatus("processing");
@@ -97,35 +102,178 @@ export function OrderDetailActions({ order }: OrderDetailActionsProps) {
         </div>
       )}
 
-      {/* Konfirmasi Pembayaran Manual (BRI / WA) */}
-      {paymentStatus !== "paid" && currentStatus !== "cancelled" && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 print:hidden">
-          <p className="text-xs font-bold text-amber-900">
-            Pembayaran Belum Terkonfirmasi ({paymentStatus.toUpperCase()})
-          </p>
-          <p className="mt-1 text-xs text-amber-800">
-            Setelah mengecek mutasi BRI Sonia Wulandari (`540701018229534`),
-            klik tombol di bawah agar status otomatis lanjut ke{" "}
-            <strong>Diproses</strong>.
-          </p>
-          <Button
-            size="sm"
-            className="mt-3"
-            disabled={saving}
-            onClick={() =>
-              patchOrder(
-                { paymentStatus: "paid", orderStatus: "processing" },
-                "Pembayaran dikonfirmasi Lunas & pesanan masuk tahap Diproses!"
-              )
-            }
-          >
-            {saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      {/* Bukti Transfer BRI dari Customer */}
+      {(order.checkout_channel === "bank_transfer" || order.payment_proof_url) && (
+        <div className="rounded-3xl border border-pink-100 bg-white p-6 shadow-card print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <ImageIcon className="h-5 w-5 text-brand-rose" />
+              <h2 className="font-serif text-lg font-semibold text-foreground">
+                Bukti Transfer BRI
+              </h2>
+            </div>
+            {order.payment_proof_url ? (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-200">
+                Screenshot Sudah Diunggah
+              </span>
             ) : (
-              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                Belum Unggah Bukti Transfer
+              </span>
             )}
-            Konfirmasi Pembayaran Lunas
-          </Button>
+          </div>
+
+          {order.payment_proof_url ? (
+            <div className="mt-4 flex flex-wrap items-start gap-4">
+              <a
+                href={order.payment_proof_url}
+                target="_blank"
+                rel="noreferrer"
+                className="relative h-48 w-36 shrink-0 overflow-hidden rounded-2xl border border-pink-200 bg-brand-cream shadow-xs transition-transform hover:scale-[1.02]"
+              >
+                <Image
+                  src={order.payment_proof_url}
+                  alt={`Bukti transfer ${order.order_number}`}
+                  fill
+                  sizes="144px"
+                  className="object-cover"
+                />
+              </a>
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <p className="font-semibold text-foreground">
+                  Customer telah mengunggah screenshot bukti transfer BRI.
+                </p>
+                {order.payment_proof_uploaded_at && (
+                  <p>
+                    Waktu unggah:{" "}
+                    <strong className="text-foreground">
+                      {new Intl.DateTimeFormat("id-ID", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                        timeZone: "Asia/Jakarta",
+                      }).format(new Date(order.payment_proof_uploaded_at))}{" "}
+                      WIB
+                    </strong>
+                  </p>
+                )}
+                <a
+                  href={order.payment_proof_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-brand-blush px-3.5 py-2 font-semibold text-brand-rose hover:bg-pink-200/70"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Buka Gambar Ukuran Penuh
+                </a>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Customer belum mengunggah screenshot bukti transfer di halaman pesanan.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Konfirmasi Pembayaran Manual (DP / Pelunasan / Lunas) */}
+      {paymentStatus !== "paid" && currentStatus !== "cancelled" && (
+        <div
+          className={cn(
+            "rounded-2xl border p-4 print:hidden",
+            paymentStatus === "dp_paid"
+              ? "border-sky-200 bg-sky-50"
+              : "border-amber-200 bg-amber-50"
+          )}
+        >
+          <p
+            className={cn(
+              "text-xs font-bold",
+              paymentStatus === "dp_paid" ? "text-sky-900" : "text-amber-900"
+            )}
+          >
+            {paymentStatus === "dp_paid"
+              ? "DP Sudah Diterima — Menunggu Pelunasan Sisa"
+              : order.payment_plan === "dp"
+                ? "Pesanan Skema DP — Belum Terkonfirmasi"
+                : `Pembayaran Belum Terkonfirmasi (${paymentStatus.toUpperCase()})`}
+          </p>
+
+          {order.payment_plan === "dp" && (
+            <div className="mt-2 flex flex-wrap gap-3 text-xs">
+              <span>
+                Total: <strong>{formatRupiah(order.total_amount)}</strong>
+              </span>
+              <span>
+                DP: <strong className="text-brand-rose">{formatRupiah(order.dp_amount ?? 0)}</strong>
+              </span>
+              <span>
+                Sisa Pelunasan:{" "}
+                <strong>
+                  {formatRupiah(
+                    order.remaining_amount ??
+                      Math.max(0, order.total_amount - (order.dp_amount ?? 0))
+                  )}
+                </strong>
+              </span>
+            </div>
+          )}
+
+          <p
+            className={cn(
+              "mt-1 text-xs",
+              paymentStatus === "dp_paid" ? "text-sky-800" : "text-amber-800"
+            )}
+          >
+            Setelah mengecek mutasi BRI Sonia Wulandari (<code>540701018229534</code>),
+            konfirmasi status pembayaran di bawah ini.
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {order.payment_plan === "dp" && paymentStatus !== "dp_paid" && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={saving}
+                onClick={() =>
+                  patchOrder(
+                    { paymentStatus: "dp_paid", orderStatus: "processing" },
+                    "DP dikonfirmasi diterima & pesanan masuk tahap Diproses!"
+                  )
+                }
+              >
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                )}
+                Konfirmasi DP Diterima ({formatRupiah(order.dp_amount ?? 0)})
+              </Button>
+            )}
+
+            <Button
+              size="sm"
+              disabled={saving}
+              onClick={() =>
+                patchOrder(
+                  paymentStatus === "dp_paid"
+                    ? { paymentStatus: "paid" }
+                    : { paymentStatus: "paid", orderStatus: "processing" },
+                  paymentStatus === "dp_paid"
+                    ? "Pelunasan dikonfirmasi! Pembayaran kini Lunas."
+                    : "Pembayaran dikonfirmasi Lunas & pesanan masuk tahap Diproses!"
+                )
+              }
+            >
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              {paymentStatus === "dp_paid"
+                ? "Konfirmasi Pelunasan Lunas"
+                : "Konfirmasi Pembayaran Lunas"}
+            </Button>
+          </div>
         </div>
       )}
 

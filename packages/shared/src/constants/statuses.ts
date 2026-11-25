@@ -85,11 +85,12 @@ export const PAYMENT_STATUS_META: Record<
   PaymentStatus,
   {
     label: string;
-    tone: "neutral" | "warning" | "success" | "danger";
+    tone: "neutral" | "warning" | "info" | "success" | "danger";
   }
 > = {
   unpaid: { label: "Belum Dibayar", tone: "neutral" },
   pending: { label: "Menunggu Pembayaran", tone: "warning" },
+  dp_paid: { label: "DP Diterima", tone: "info" },
   paid: { label: "Lunas", tone: "success" },
   failed: { label: "Gagal", tone: "danger" },
   expired: { label: "Kedaluwarsa", tone: "danger" },

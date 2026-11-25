@@ -8,6 +8,7 @@ import type {
   CourierProvider,
   FulfillmentMethod,
   MoneyBouquetDetails,
+  PaymentPlan,
 } from "../types/domain";
 import { formatRupiah } from "./currency";
 import { formatIndonesianDate } from "./date";
@@ -152,6 +153,9 @@ export interface OrderConfirmationWaParams {
   deliveryAddress?: string | null;
   deliveryDistrict?: string | null;
   paymentMethodLabel?: string;
+  paymentPlan?: PaymentPlan;
+  dpAmount?: number;
+  remainingAmount?: number;
   hasSeparateMoneyBouquetCash?: boolean;
   itemsSummary: Array<{
     productName: string;
@@ -235,7 +239,18 @@ export function buildOrderConfirmWaLink(
   }
 
   lines.push("_________________________________");
-  lines.push(`Total Checkout : *${formatRupiah(params.totalAmount)}*`);
+  lines.push(`Total Pesanan : *${formatRupiah(params.totalAmount)}*`);
+  if (params.paymentPlan === "dp" && typeof params.dpAmount === "number" && params.dpAmount > 0) {
+    const remaining =
+      typeof params.remainingAmount === "number"
+        ? params.remainingAmount
+        : Math.max(0, params.totalAmount - params.dpAmount);
+    lines.push(`Skema Bayar : *DP (Down Payment)*`);
+    lines.push(`• Nominal DP Sekarang : *${formatRupiah(params.dpAmount)}*`);
+    lines.push(`• Sisa Pelunasan : ${formatRupiah(remaining)}`);
+  } else {
+    lines.push("Skema Bayar : *Lunas (100%)*");
+  }
   if (params.paymentMethodLabel) {
     lines.push(`Metode Bayar : ${params.paymentMethodLabel}`);
   }
