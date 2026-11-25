@@ -29,9 +29,8 @@ export function Navbar() {
             <Image
               src="/logo.jpg"
               alt="Logo Bumbuket.pku"
-              width={40}
-              height={40}
-              className="h-10 w-10 rounded-full object-cover"
+              width={50}
+              height={50}
             />
           </span>
           <div className="leading-tight">
